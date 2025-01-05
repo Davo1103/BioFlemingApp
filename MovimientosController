@@ -1,0 +1,95 @@
+using AlmacenBioLab.Data;
+using AlmacenBioLab.Models;
+using Microsoft.AspNetCore.Mvc.Rendering;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+public class MovimientosController : Controller
+{
+    private readonly AlmacenDbContext _context;
+
+    public MovimientosController(AlmacenDbContext context)
+    {
+        _context = context;
+    }
+
+    // GET: Movimiento/Index
+    public IActionResult Index()
+    {
+        var movimientos = _context.Movimientos.Include(m => m.Empleado).Include(m => m.Articulo).ToList();
+        return View(movimientos);
+    }
+
+    // GET: Movimiento/Create
+    public IActionResult Create()
+    {
+        ViewBag.Empleados = new SelectList(_context.Empleados, "IdEmpleado", "Nombre");
+        ViewBag.Articulos = new SelectList(_context.Articulos.Where(a => a.Cantidad > 0), "IdArticulo", "Nombre");
+        return View();
+    }
+
+    // POST: Movimiento/Create
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create([Bind("IdEmpleado,IdArticulo,FechaPrestamo,DescripcionPrestamo")] Movimiento movimiento)
+    {
+        if (ModelState.IsValid)
+        {
+            var articulo = await _context.Articulos.FindAsync(movimiento.IdArticulo);
+            if (articulo.Cantidad > 0)
+            {
+                articulo.Cantidad -= 1; // Decrementar cantidad
+                _context.Add(movimiento);
+                await _context.SaveChangesAsync();
+                return RedirectToAction(nameof(Index));
+            }
+            else
+            {
+                ModelState.AddModelError("", "No hay stock disponible para este artículo.");
+            }
+        }
+
+        ViewBag.Empleados = new SelectList(_context.Empleados, "IdEmpleado", "Nombre", movimiento.IdEmpleado);
+        ViewBag.Articulos = new SelectList(_context.Articulos, "IdArticulo", "Nombre", movimiento.IdArticulo);
+        return View(movimiento);
+    }
+
+    // GET: Movimiento/Return
+    public IActionResult Return(int id)
+    {
+        var movimiento = _context.Movimientos.Include(m => m.Articulo).FirstOrDefault(m => m.IdMov == id);
+        if (movimiento == null)
+        {
+            return NotFound();
+        }
+        return View(movimiento);
+    }
+
+    // POST: Movimiento/Return
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Return(int id, [Bind("FechaRegreso,DescripcionRegreso")] Movimiento movimiento)
+    {
+        if (id != movimiento.IdMov)
+        {
+            return NotFound();
+        }
+
+        var movimientoExistente = await _context.Movimientos.FindAsync(id);
+        if (movimientoExistente != null)
+        {
+            movimientoExistente.FechaRegreso = movimiento.FechaRegreso;
+            movimientoExistente.DescripcionRegreso = movimiento.DescripcionRegreso;
+            var articulo = await _context.Articulos.FindAsync(movimientoExistente.IdArticulo);
+            if (articulo != null)
+            {
+                articulo.Cantidad += 1; // Incrementar cantidad
+            }
+            _context.Update(movimientoExistente);
+            await _context.SaveChangesAsync();
+            return RedirectToAction(nameof(Index));
+        }
+
+        return View(movimiento);
+    }
+}
